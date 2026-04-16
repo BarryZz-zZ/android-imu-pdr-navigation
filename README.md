@@ -31,6 +31,10 @@ This project focuses on real-time pedestrian positioning with on-device 9-axis I
   CSV session logger for IMU and PDR outputs
 - `app/src/main/java/com/example/myapplication/CoordinateTransformUtil.kt`
   Coordinate conversion utilities
+- `docs/pdr_system_report.tex`
+  Detailed Chinese LaTeX report covering architecture, algorithm design, experiments, and evaluation
+- `tools/generate_pdr_ppt_from_template.py`
+  Helper script for generating the presentation from the course PPT template
 
 ## Requirements
 
@@ -66,6 +70,29 @@ app/build/outputs/apk/debug/app-debug.apk
 - The current implementation is intended as a practical PDR prototype rather than a production-grade navigation stack.
 - Long-session drift still depends on device quality, carrying pose, and magnetometer conditions.
 - GPS is used only as a light assist to reduce accumulated heading and trajectory drift.
+
+## Report
+
+The repository includes a detailed Chinese LaTeX report:
+
+```text
+docs/pdr_system_report.tex
+```
+
+Recommended build command:
+
+```bash
+xelatex docs/pdr_system_report.tex
+```
+
+The report includes:
+
+- development process and implementation details
+- 6-axis and 9-axis AHRS principles
+- filtering and peak detection strategy
+- step-length estimation and interruption correction
+- experiment template pages for later completion
+- evaluation metrics, strengths, limitations, and future work
 
 ## Future Improvements
 

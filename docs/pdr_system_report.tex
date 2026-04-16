@@ -1,0 +1,359 @@
+\documentclass[12pt,a4paper]{ctexart}
+
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{xcolor}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!50!black,
+    citecolor=blue!50!black
+}
+
+\setlist[itemize]{nosep,leftmargin=2em}
+\setlist[enumerate]{nosep,leftmargin=2em}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{2em}
+
+\title{基于 Android 九轴 IMU 的实时 PDR 定位系统\\详细设计与实验报告}
+\author{BarryZ}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{项目背景与目标}
+行人航迹推算（Pedestrian Dead Reckoning, PDR）是一类依赖惯性传感器持续推算用户相对位移的方法。相比纯 GPS 定位，PDR 在室内、遮挡环境以及短时失锁场景下仍具有可持续更新位置的能力，因此常被用于移动端定位、室内导航、人员运动分析与位姿感知等任务。
+
+本项目基于 Android 手机端实现实时 PDR 系统，目标并不是构建一套完整的商业级导航平台，而是在课程设计和工程演示场景下完成一条可运行、可观测、可扩展的实时链路。系统围绕手机加速度计、陀螺仪、磁力计以及 GPS 辅助信息展开，重点解决如下问题：
+
+\begin{itemize}
+    \item 在 Android Studio 中构建可直接编译、预览和部署的手机端 PDR 工程。
+    \item 实现加速度计、陀螺仪、磁力计、系统计步器和 GPS 信息的实时采集。
+    \item 在手机端完成六轴与九轴姿态滤波、脚步探测、步长估计、中断检查与航向修正、位置递推。
+    \item 提供中文实时界面、地图显示、方向标志、实时数据输出和本地日志保存能力。
+    \item 为后续实验记录、参数调整、精度评估和课程答辩提供完整的工程与文档基础。
+\end{itemize}
+
+\section{系统需求与总体设计}
+\subsection{功能需求}
+系统需要满足如下核心功能需求：
+
+\begin{itemize}
+    \item 实时采集手机 IMU 数据，包括三轴加速度、三轴角速度、三轴磁场强度。
+    \item 以较高刷新频率完成姿态计算、步频探测、步长估计与位置更新。
+    \item 提供六轴和九轴两种 AHRS 模式，适应不同传感器能力和不同磁环境。
+    \item 在地图上实时绘制轨迹，并提供表示用户朝向和行进方向的方向标记。
+    \item 记录传感器原始值与中间状态量，便于实验回放与结果分析。
+    \item 支持 Android Studio Preview，便于在不启动真机的情况下预览核心界面。
+\end{itemize}
+
+\subsection{非功能需求}
+\begin{itemize}
+    \item 工程应保持清晰的模块边界，便于后续替换算法和扩展功能。
+    \item UI 需要中文化、信息层级清晰、避免卡片堆叠造成界面臃肿。
+    \item 日志格式需要固定、字段明确，方便离线分析和绘图。
+    \item 需要具备基本的权限检查与异常处理能力，避免 Android Studio lint 和运行时崩溃。
+\end{itemize}
+
+\subsection{总体架构}
+本项目采用“传感器采集层 -- PDR 计算层 -- 表现与存储层”的结构：
+
+\begin{enumerate}
+    \item 传感器采集层负责从 \texttt{SensorManager} 和 \texttt{FusedLocationProviderClient} 获取运动和定位数据。
+    \item PDR 计算层由 \texttt{NineAxisPdrEngine} 负责，实现姿态滤波、步检、步长估计、中断修正和位置递推。
+    \item 表现与存储层由 \texttt{MainActivity} 与 \texttt{ImuCsvLogger} 组成，负责实时界面、地图绘制、方向显示和日志落盘。
+\end{enumerate}
+
+\section{开发过程与工程实现}
+\subsection{开发过程}
+本项目的实现过程可以概括为五个阶段：
+
+\begin{enumerate}
+    \item \textbf{需求梳理阶段}：根据课程汇报 PPT 提炼算法链路，明确系统至少需要覆盖采集、滤波、脚步处理、位置更新和实验展示五个部分。
+    \item \textbf{引擎重构阶段}：重写 \texttt{NineAxisPdrEngine}，将六轴 / 九轴姿态滤波、步频探测、步长估计、中断修正和 GPS 辅助修正统一纳入一个实时引擎中。
+    \item \textbf{界面重构阶段}：重构 \texttt{MainActivity}，接入地图、折叠面板、方向标志、实时状态区和 Android Studio Preview。
+    \item \textbf{日志完善阶段}：扩展 \texttt{ImuCsvLogger}，在记录原始 IMU 数据的同时增加姿态、步态、修正状态和位置字段。
+    \item \textbf{工程稳定阶段}：补齐权限检查、异常捕获和 Gradle 依赖，确保 \texttt{:app:assembleDebug} 可正常通过。
+\end{enumerate}
+
+\subsection{关键代码文件职责}
+\begin{longtable}{p{0.28\textwidth}p{0.64\textwidth}}
+\toprule
+文件 & 主要职责 \\
+\midrule
+\endhead
+\texttt{MainActivity.kt} & Compose 主界面、传感器监听、GPS 更新、地图轨迹展示、方向标记、用户交互控制、Preview 支持。 \\
+\texttt{NineAxisPdrEngine.kt} & PDR 核心引擎，负责 AHRS 姿态解算、步检、步长估计、中断检测、航向重对准与位置递推。 \\
+\texttt{ImuCsvLogger.kt} & 将每个采样历元的 IMU 原始值和 PDR 中间状态写入 CSV 文件。 \\
+\texttt{CoordinateTransformUtil.kt} & WGS84 与 GCJ-02 等坐标转换工具，用于地图显示。 \\
+\texttt{tools/generate\_pdr\_ppt\_from\_template.py} & 基于课程汇报模板自动生成讲解 PPT 的工具脚本。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{UI 与工程化调整}
+原始版本更偏向功能堆叠，信息密度较高。重构后的界面采用三层结构：
+
+\begin{itemize}
+    \item 顶部为状态区，显示采样率、定位精度、当前方位、修正来源和模式切换。
+    \item 中部为地图工作区，负责显示轨迹折线、当前位置和方向标志。
+    \item 底部为折叠工作区，显示步数、步频、步长、姿态角、传感器模值、位置量和控制按钮。
+\end{itemize}
+
+这套设计的目的不是追求复杂的视觉装饰，而是为了提高实验过程中的信息可读性，使用户在查看地图的同时仍能快速观察关键状态量。
+
+\section{数据采集与实时输出设计}
+\subsection{传感器采集}
+系统从 Android 端获取如下数据：
+
+\begin{itemize}
+    \item 加速度计：提供机体系下的比力信息，是步检和重力观测的基础。
+    \item 陀螺仪：提供角速度，用于姿态积分。
+    \item 磁力计：提供地磁方向观测，用于九轴模式下的偏航约束。
+    \item 系统计步器：作为辅助展示项，不参与主 PDR 推算。
+    \item GPS / 速度 / bearing：用于起点初始化，以及后续轻量位置与航向修正。
+\end{itemize}
+
+\subsection{时间组织方式}
+课程方案中建议采用线性插值将多源传感器统一到同一时间基准下。当前工程版本采取折中方案：以加速度事件作为主时间轴，每当收到新的加速度样本时，拼接最近一次陀螺仪和磁力计观测形成一个处理样本。这样做的优点是实时性好、实现复杂度低，缺点是还没有完成严格意义上的多源重采样。
+
+\subsection{实时输出字段}
+当前系统除了地图轨迹之外，还提供了丰富的实时状态输出。CSV 字段包括但不限于：
+
+\begin{itemize}
+    \item 原始 IMU 数据：\texttt{ax, ay, az, gx, gy, gz, mx, my, mz}
+    \item 姿态字段：\texttt{ahrs\_mode, roll\_deg, pitch\_deg, yaw\_deg, heading\_deg}
+    \item 步态字段：\texttt{total\_steps, cadence\_spm, step\_frequency\_hz, last\_step\_length\_m}
+    \item 位置字段：\texttt{east\_m, north\_m, lat, lon, total\_distance\_m}
+    \item 状态字段：\texttt{is\_interrupted, interrupt\_count, last\_step\_interval\_s, last\_correction}
+\end{itemize}
+
+这些字段为后续实验绘图和误差分析提供了良好的数据基础。
+
+\section{核心原理与算法设计}
+\subsection{初始化}
+系统启动后不会立即进入位置递推，而是先等待起点锁定。初始化阶段主要完成两件事：
+
+\begin{enumerate}
+    \item 使用 GPS 位置建立起始经纬度基准。
+    \item 若当前位置包含 bearing，则将该 bearing 作为初始航向输入姿态滤波器；若没有 bearing，则依赖姿态和磁力的初始估计。
+\end{enumerate}
+
+若设备不具备磁力计，则系统自动降级为六轴模式，以保证应用仍可运行。
+
+\subsection{姿态滤波：六轴 AHRS}
+六轴 AHRS 只使用陀螺仪和加速度计信息。其核心思路如下：
+
+\begin{itemize}
+    \item 采用四元数表示姿态，避免欧拉角表示下的奇异性问题。
+    \item 使用陀螺仪角速度对姿态进行短时积分，得到姿态的连续变化。
+    \item 根据当前四元数估计重力方向，与加速度计观测到的重力方向进行比较。
+    \item 使用两者叉积构造误差向量，再通过比例项和积分项对陀螺仪角速度进行补偿。
+    \item 最后更新并归一化四元数，计算得到滚转角、俯仰角与偏航角。
+\end{itemize}
+
+这种方法计算量较小，适合手机端实时运行，但由于缺乏磁场约束，偏航角会在长时间运行中逐渐漂移。
+
+\subsection{姿态滤波：九轴 AHRS}
+九轴 AHRS 在六轴基础上加入磁力计观测，从而对偏航角提供约束。其核心逻辑为：
+
+\begin{itemize}
+    \item 将加速度计和磁力计归一化后，与当前四元数推算的地球重力场和磁场方向进行比较。
+    \item 同时构造重力误差和磁场误差，参与姿态补偿。
+    \item 通过误差积分减少短时扰动带来的抖动。
+    \item 在检测到中断后，如果磁场幅值正常，则重新利用磁场信息校正航向。
+\end{itemize}
+
+九轴方案可以有效抑制长期偏航漂移，但在磁干扰较强的室内环境下也更容易受到异常磁场的影响，因此必须配合中断检测和异常判断。
+
+\subsection{信号平滑与滤波策略}
+项目中的滤波策略以轻量在线处理为主：
+
+\begin{itemize}
+    \item 对加速度、陀螺仪和磁力数据分别做一阶平滑，抑制高频随机噪声。
+    \item 利用 AHRS 求得的重力方向，从加速度中扣除重力分量，得到线性加速度。
+    \item 将线性加速度投影到当前重力方向上，得到垂向加速度信号，作为步检主要特征。
+\end{itemize}
+
+这一设计兼顾了实时性和可解释性。与复杂的带通滤波或频域处理相比，它更适合直接在移动端每个传感器事件上在线更新。
+
+\subsection{步频探测与波峰检测}
+本项目采用基于局部峰值的步频探测方法。核心判定规则为：
+
+\begin{enumerate}
+    \item 取连续三个历元的垂向加速度值。
+    \item 若中间历元大于前后两个历元，则认为该点可能是局部峰值。
+    \item 该峰值还必须超过动态阈值，才能被认为是有效步峰。
+    \item 同时要求陀螺仪模值超过最小运动阈值，从而过滤静止抖动和伪峰。
+\end{enumerate}
+
+动态阈值并不是固定常数，而是根据最近信号幅值自适应更新，并被限制在一个合理区间内。这种方式比固定阈值更适合不同步态和不同手机型号，但其效果仍受持机姿态和步态变化影响。
+
+\subsection{步长估计}
+在步峰被确认后，系统会根据以下因素估计步长：
+
+\begin{itemize}
+    \item 最近步间隔求得的步频；
+    \item 当前峰值幅度；
+    \item 用户身高补偿参数；
+    \item 最近几次步间隔的平滑结果。
+\end{itemize}
+
+当前实现使用经验模型进行步长估计，并对结果做上下限约束。这种方法实现简单，适合课程设计，但尚不具备强泛化能力。若后续需要提升精度，可以考虑针对不同持机姿态或用户个体建立自适应模型。
+
+\subsection{中断检查与修正}
+如果相邻两步时间间隔大于 $1.5s$，系统认为发生了行走中断。引入中断检查的原因有两个：
+
+\begin{itemize}
+    \item 避免将中断前后的不连续步态直接用于步长估计，导致异常增大或减小；
+    \item 在用户短暂停止后重新起步时，利用磁力信息或 GPS 辅助对航向进行再次校正。
+\end{itemize}
+
+当前中断后的修正策略如下：
+
+\begin{enumerate}
+    \item 标记一次中断事件，并统计中断次数。
+    \item 若磁场模值可信，则调用磁航向重对准函数，更新偏航角。
+    \item 若后续 GPS 精度和速度条件满足，则允许继续使用 GPS bearing 对航向做轻量融合。
+\end{enumerate}
+
+\subsection{位置更新}
+位置更新过程不直接在经纬度坐标上递推，而是先在局部东-北平面坐标系中计算位移，再转回经纬度。设当前步长为 $L$，航向角为 $\theta$，则每一步的平面递推可表示为：
+
+\begin{equation}
+\Delta E = L \sin(\theta), \qquad \Delta N = L \cos(\theta)
+\end{equation}
+
+然后根据起点经纬度和当前累计的东向、北向位移，计算新的经纬度坐标。这种方式有两个优势：
+
+\begin{itemize}
+    \item 公式简单，适合实时增量更新；
+    \item 便于后续引入地图约束、平面误差分析和闭环校正。
+\end{itemize}
+
+\section{界面设计与交互实现}
+\subsection{界面结构}
+系统采用 Jetpack Compose 实现中文实时界面，主要包括：
+
+\begin{itemize}
+    \item 顶部状态区：采样率、定位精度、地图模式、AHRS 模式、修正来源。
+    \item 右侧方向区：方向箭头和回到当前位置按钮。
+    \item 底部工作区：步数、步频、步长、姿态角、位置、传感器指标、控制按钮。
+\end{itemize}
+
+\subsection{地图显示}
+地图部分采用高清地图和卫星图双模式，并通过方向标记表示当前用户方位。轨迹使用折线实时绘制，当前位置使用自定义箭头图标指示，保证演示时能直接观察用户当前位置和行进方向。
+
+\subsection{Preview 与构建支持}
+为了便于 Android Studio 中调试界面，本项目额外提供了 Preview 版本的地图占位组件。实际运行时使用 \texttt{MapView}；在 Preview 模式下则使用占位图替代，避免因为地图组件依赖运行时环境而导致预览失败。
+
+\section{实验设计与过程记录}
+本节用于填写真实实验内容。当前保留标准模板，便于后续补充。
+
+\subsection{实验目的}
+\begin{itemize}
+    \item 验证实时 PDR 系统在手机端的基本可运行性。
+    \item 比较六轴与九轴模式在航向稳定性和轨迹偏差上的差异。
+    \item 观察不同持机姿态、不同步速、不同场景下的系统鲁棒性。
+\end{itemize}
+
+\subsection{实验环境记录（待填写）}
+\begin{longtable}{p{0.28\textwidth}p{0.64\textwidth}}
+\toprule
+项目 & 内容 \\
+\midrule
+\endhead
+手机型号 & \\
+Android 版本 & \\
+传感器配置 & \\
+实验场景 & \\
+测试时间 & \\
+持机方式 & \\
+路径长度 & \\
+真实路径描述 & \\
+\bottomrule
+\end{longtable}
+
+\subsection{实验步骤（待填写）}
+\begin{enumerate}
+    \item 打开应用并授权定位权限。
+    \item 选择六轴或九轴模式，等待 GPS 锁定起点。
+    \item 按设定路径行走，记录地图轨迹和日志文件。
+    \item 更换模式或持机方式，重复实验。
+    \item 导出日志并统计步数误差、终点误差、轨迹偏差等指标。
+\end{enumerate}
+
+\subsection{实验结果记录页（待填写）}
+\begin{itemize}
+    \item 轨迹图：\textbf{此处插入地图截图}
+    \item 误差表：\textbf{此处插入统计表}
+    \item 六轴 / 九轴对比图：\textbf{此处插入对比图}
+    \item 中断修正案例：\textbf{此处插入截图与说明}
+\end{itemize}
+
+\vspace{3cm}
+\begin{center}
+    \fbox{\parbox{0.85\textwidth}{\centering
+    实验图片与轨迹结果占位区\\
+    可在此插入真实路线图、PDR 轨迹图、误差柱状图和结论摘要。}}
+\end{center}
+
+\section{评价方法、优点与局限性}
+\subsection{评价方法}
+为了系统评估本项目的效果，可以采用以下指标：
+
+\begin{enumerate}
+    \item \textbf{终点误差}：真实终点与推算终点之间的距离。
+    \item \textbf{平均轨迹偏差}：推算轨迹到参考路径的平均距离。
+    \item \textbf{步数误差}：PDR 步检步数与真实步数的差异。
+    \item \textbf{航向偏差}：关键拐点处估计航向与真实方向之间的差值。
+    \item \textbf{实时性指标}：系统刷新率、采样率、处理时延、CPU 开销。
+\end{enumerate}
+
+\subsection{系统优点}
+\begin{itemize}
+    \item 纯手机端即可运行，不依赖外部 IMU 或专用硬件，部署成本低。
+    \item 在 GPS 不稳定或不可用时仍能保持连续位移估计。
+    \item 六轴与九轴双模式并存，能够根据设备能力和环境条件灵活切换。
+    \item 实时状态输出和 CSV 日志完备，便于调参、复盘和课程答辩。
+    \item 界面、构建链路和 Preview 支持已完成工程化落地。
+\end{itemize}
+
+\subsection{系统局限性}
+\begin{itemize}
+    \item 当前步长模型主要基于经验参数，对不同用户和持机方式的泛化仍有限。
+    \item 九轴模式在磁扰环境下可能出现航向突变，仍需更稳健的异常判定机制。
+    \item 当前时间同步采用加速度主时间轴近似方案，尚未引入完整线性插值重采样。
+    \item GPS 辅助修正更适合室外场景，室内环境仍缺少强约束。
+    \item 尚未引入地图匹配、零速更新或更完整的滤波框架，因此长距离累计误差仍不可避免。
+\end{itemize}
+
+\section{后续改进方向}
+基于当前系统，可以从以下几个方向继续优化：
+
+\begin{itemize}
+    \item 增加严格的多传感器时间插值与统一频率重采样模块。
+    \item 引入持机姿态识别，根据手持、口袋、胸前等状态调整阈值和步长模型。
+    \item 研究零速更新、误差状态滤波或卡尔曼滤波框架，进一步抑制累计漂移。
+    \item 结合地图约束、楼层信息、道路连通性等先验，提升轨迹合理性。
+    \item 建立标准测试数据集，并自动生成误差统计图与实验报告。
+\end{itemize}
+
+\section{结论}
+本项目围绕 Android 手机端实时 PDR 系统完成了一次较完整的工程实现。系统已经具备从 IMU 数据采集、六轴 / 九轴姿态滤波、步频探测、步长估计、中断修正到位置更新、地图显示和日志保存的完整链路，并且在界面、构建和预览方面达到了可展示、可复现、可继续扩展的要求。
+
+从课程设计角度看，本项目的价值主要体现在两个方面：一是将 PPT 中的算法思路落成了真实可运行的软件；二是保留了足够多的中间状态和工程接口，使得后续实验、答辩和优化工作具有较好的可操作性。后续若继续围绕精度提升展开工作，应优先补强时间同步、磁扰鲁棒性和步长个性化建模能力。
+
+\end{document}

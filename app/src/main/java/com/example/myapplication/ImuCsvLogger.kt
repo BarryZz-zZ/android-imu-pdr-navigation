@@ -22,7 +22,10 @@ class ImuCsvLogger(private val context: Context) {
         writer = file.bufferedWriter()
         filePath = file.absolutePath
         writer?.append(
-            "timestamp_ns,ax,ay,az,gx,gy,gz,mx,my,mz,heading_deg,steps,cadence_spm,distance_m,east_m,north_m,lat,lon,event\n"
+            "timestamp_ns,ax,ay,az,gx,gy,gz,mx,my,mz,ahrs_mode,roll_deg,pitch_deg,yaw_deg,heading_deg,total_steps," +
+                "cadence_spm,step_frequency_hz,last_step_length_m,total_distance_m,east_m,north_m,lat,lon,raw_acc_norm," +
+                "filtered_vertical_acc,gyro_norm,mag_norm,is_interrupted,interrupt_count,last_step_interval_s," +
+                "last_correction,event\n"
         )
         writer?.flush()
         return filePath
@@ -41,14 +44,28 @@ class ImuCsvLogger(private val context: Context) {
             .append(sample.mx).append(',')
             .append(sample.my).append(',')
             .append(sample.mz).append(',')
+            .append(snapshot.ahrsMode.name).append(',')
+            .append(snapshot.rollDeg).append(',')
+            .append(snapshot.pitchDeg).append(',')
+            .append(snapshot.yawDeg).append(',')
             .append(snapshot.headingDeg).append(',')
             .append(snapshot.totalSteps).append(',')
             .append(snapshot.cadenceSpm).append(',')
+            .append(snapshot.stepFrequencyHz).append(',')
+            .append(snapshot.lastStepLengthM).append(',')
             .append(snapshot.totalDistanceM).append(',')
             .append(snapshot.eastM).append(',')
             .append(snapshot.northM).append(',')
             .append(snapshot.lat).append(',')
             .append(snapshot.lon).append(',')
+            .append(snapshot.rawAccNorm).append(',')
+            .append(snapshot.filteredVerticalAcc).append(',')
+            .append(snapshot.gyroNorm).append(',')
+            .append(snapshot.magNorm).append(',')
+            .append(snapshot.isInterrupted).append(',')
+            .append(snapshot.interruptCount).append(',')
+            .append(snapshot.lastStepIntervalS).append(',')
+            .append(snapshot.lastCorrection).append(',')
             .append(event)
             .append('\n')
 
